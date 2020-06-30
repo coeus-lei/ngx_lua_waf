@@ -63,6 +63,7 @@ uarules=read_rule('user-agent')
 wturlrules=read_rule('whiteurl')
 postrules=read_rule('post')
 ckrules=read_rule('cookie')
+ipblocklist=read_rule('blockip')
 
 
 function say_html()
