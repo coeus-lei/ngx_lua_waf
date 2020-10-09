@@ -1,19 +1,26 @@
 require 'config'
 local match = string.match
-local ngxmatch=ngx.re.match
+local ngxmatch=ngx.re.find
 local unescape=ngx.unescape_uri
 local get_headers = ngx.req.get_headers
 local optionIsOn = function (options) return options == "on" and true or false end
+
 logpath = logdir 
 rulepath = RulePath
+logtofile = optionIsOn(logtofile)
 UrlDeny = optionIsOn(UrlDeny)
 PostCheck = optionIsOn(postMatch)
 CookieCheck = optionIsOn(cookieMatch)
 WhiteCheck = optionIsOn(whiteModule)
 PathInfoFix = optionIsOn(PathInfoFix)
 attacklog = optionIsOn(attacklog)
+denycclog =  optionIsOn(denycclog)
+hackipdeny = optionIsOn(hackipdeny)
 CCDeny = optionIsOn(CCDeny)
+cclinkhack = optionIsOn(cclinkhack)
 Redirect=optionIsOn(Redirect)
+local file = io.open('config')
+
 function getClientIp()
         IP  = ngx.var.remote_addr 
         if IP == nil then
@@ -28,20 +35,51 @@ function write(logfile,msg)
     fd:flush()
     fd:close()
 end
+
+function swrite(msg)
+      --保存`警告等级要高于nginx error_log的默认等级。
+                        ngx.log(ngx.CRIT,msg)
+
+end
+
+
+
+
+--swrite('计数器:'..token..'当前计数器'..req..'阻止访问时间:'..CClimits)
+
+function cclogs(tokens,reqs,CCsecondss,CClimitss)
+
+   if  denycclog then
+      --local ua = ngx.var.http_user_agent
+       --if ua == nil then 
+       --        ua="null"
+       -- end
+       local servername=ngx.var.host
+       local time=ngx.localtime()
+       if logtofile then
+       local filename = logpath..'/'.."denycc".."_"..ngx.today().."_sec.log"
+	lines=servername.." ["..time.."] 来源ip+url:"..tokens.." "..CCsecondss.."秒内累计超过:"..reqs.." 封锁:"..CClimitss.."秒\n"
+       write(filename,lines)
+        end
+end
+end
+
 function log(method,url,data,ruletag)
     if attacklog then
         local realIp = getClientIp()
         local ua = ngx.var.http_user_agent
-        local servername=ngx.var.server_name
-        local time=ngx.localtime()
-        if ua  then
-            line = realIp.." ["..time.."] \""..method.." "..servername..url.."\" \""..data.."\"  \""..ua.."\" \""..ruletag.."\"\n"
-        else
-            line = realIp.." ["..time.."] \""..method.." "..servername..url.."\" \""..data.."\" - \""..ruletag.."\"\n"
+        if ua == nil then 
+                ua="null"
         end
+        local servername=ngx.var.host
+        local time=ngx.localtime()
+        if logtofile then
         local filename = logpath..'/'..servername.."_"..ngx.today().."_sec.log"
+        line=realIp.." ["..time.."]".."\""..method.." "..servername..url.."\""..data.."\""..ua.."\""..ruletag.."\"".."\n"
         write(filename,line)
-    end
+        end
+              if hackipdeny then  denyhackip(0) end
+   end
 end
 ------------------------------------规则读取函数-------------------------------------------------------------------
 function read_rule(var)
@@ -63,7 +101,7 @@ uarules=read_rule('user-agent')
 wturlrules=read_rule('whiteurl')
 postrules=read_rule('post')
 ckrules=read_rule('cookie')
-ipblocklist=read_rule('blockip')
+html=read_rule('intercepthtml')
 
 
 function say_html()
@@ -79,21 +117,35 @@ function whiteurl()
     if WhiteCheck then
         if wturlrules ~=nil then
             for _,rule in pairs(wturlrules) do
-                if ngxmatch(ngx.var.uri,rule,"isjo") then
+            --针对site:开始的进行域名匹配。增加白名单用处。
+                    local sitemod,_=string.find(rule,"site:")
+                                if sitemod==1 then
+                                        rule=string.gsub(rule,"site:","",1)
+                                        --调试whiteurl
+                                        --if ngx.var.host=='domino.cqhrss.gov.cn' then 
+                                        --      log('debug',ngx.var.uri,"",rule)
+                                        --end
+                                        if ngxmatch(ngx.var.host..ngx.var.uri,rule,"isjo") then
                     return true 
-                 end
+                end
+                                else
+                        if ngxmatch(ngx.var.uri,rule,"isjo") then
+                    return true 
+                end
+                end
             end
         end
     end
     return false
 end
+
 function fileExtCheck(ext)
     local items = Set(black_fileExt)
     ext=string.lower(ext)
     if ext then
-        for rule in pairs(items) do
-            if ngx.re.match(ext,rule,"isjo") then
-	        log('POST',ngx.var.request_uri,"-","file attack with ext "..ext)
+        for rule,_ in pairs(items) do
+            if ngxmatch(ext,rule,"isjo") then
+               log('POST',ngx.var.request_uri,"-","file attack with ext "..ext)
             say_html()
             end
         end
@@ -185,17 +237,26 @@ end
 function denycc()
     if CCDeny then
         local uri=ngx.var.uri
-        CCcount=tonumber(string.match(CCrate,'(.*)/'))
-        CCseconds=tonumber(string.match(CCrate,'/(.*)'))
+        local m, err = ngx.re.match(CCrate,'([0-9]+)/([0-9]+)/([0-9]+)')
+        local CCcount=tonumber(m[1]) --计数器上限
+        local CCseconds=tonumber(m[2]) --计时器
+        local CClimits=tonumber(m[3]) --阻止访问时间
         local token = getClientIp()..uri
         local limit = ngx.shared.limit
-        local req,_=limit:get(token)
+        local req,_=limit:get(token) --计数器当前值
+	local drop_ip = getClientIp()
         if req then
             if req > CCcount then
-                 ngx.exit(503)
+              if hackipdeny and cclinkhack then  denyhackip(0) end
+              ngx.exit(444)
                 return true
             else
-                 limit:incr(token,1)
+                        if req == CCcount then 
+				limit:set(token,CCcount+1,CClimits)
+				cclogs(token,req,CCseconds,CClimits)
+
+			end
+                limit:incr(token,1)
             end
         else
             limit:set(token,1,CCseconds)
@@ -204,6 +265,46 @@ function denycc()
     return false
 end
 
+
+
+--chk为1表示检测值，不增加，不创建，返回检测结果。
+function denyhackip(chk)
+    if hackipdeny then
+    
+       local m, err = ngx.re.match(hackrate,'([0-9]+)/([0-9]+)/([0-9]+)')
+        local hicount=tonumber(m[1]) --计数器上限
+        local hiseconds=tonumber(m[2]) --计时器
+        local hilimits=tonumber(m[3]) --阻止访问时间
+        local token = "hackip"..getClientIp()
+        local limit = ngx.shared.drop
+        local req,_=limit:get(token) --计数器当前值
+        if req then
+            if req > hicount then
+                ngx.exit(444)
+                return true
+            else
+            
+                        if req == hicount then    
+                                        limit:set(token,hicount+1,hilimits)
+                                       -- swrite("ip:"..getClientIp().."因攻击被暂停访问"..hilimits.."秒。")
+					cclogs(token,req,hiseconds,hilimits)
+
+		
+                                        end
+                 if chk ~=1 then limit:incr(token,1)  
+
+    end
+                --swrite("计数器:"..token.."检测状态:"..chk.."当前计数器"..req.."阻止访问时间:"..hilimits)
+					--cclogs(ip,req,hiseconds,hilimits)
+            end
+        else
+                        if chk ~=1 then limit:set(token,1,hiseconds)   
+				end
+            
+        end
+    end
+    return false
+end
 function get_boundary()
     local header = get_headers()["content-type"]
     if not header then

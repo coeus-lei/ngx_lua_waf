@@ -1,45 +1,25 @@
-RulePath = "/usr/local/nginx/conf/waf/wafconf/"
+RulePath = "/usr/local/nginx/waf/wafconf/"
 attacklog = "on"
-logdir = "/usr/local/nginx/logs/hack/"
+--args post  url  user-agent..日志文件开关
+logtofile = "on"
+--ccdeny or hackipdeny日志记录开关-
+denycclog="on"
+--日志路径
+logdir = "/home/wwwlogs/waf/"
 UrlDeny="on"
 Redirect="on"
 CookieMatch="on"
 postMatch="on" 
 whiteModule="on" 
 black_fileExt={"php","jsp"}
-ipWhitelist={"127.0.0.1"}
+ipWhitelist={"139.159.194.220","127.0.0.1","119.8.104.73","159.138.40.51","159.138.40.162","159.138.10.120","119.8.103.214","159.138.32.40","159.138.40.64","159.138.48.77"}
 ipBlocklist={"1.0.0.1"}
-CCDeny="off"
-CCrate="100/60"
-html=[[
-<html xmlns="http://www.w3.org/1999/xhtml"><head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<title>网站防火墙</title>
-<style>
-p {
-	line-height:20px;
-}
-ul{ list-style-type:none;}
-li{ list-style-type:none;}
-</style>
-</head>
-
-<body style=" padding:0; margin:0; font:14px/1.5 Microsoft Yahei, 宋体,sans-serif; color:#555;">
-
- <div style="margin: 0 auto; width:1000px; padding-top:70px; overflow:hidden;">
-  
-  
-  <div style="width:600px; float:left;">
-    <div style=" height:40px; line-height:40px; color:#fff; font-size:16px; overflow:hidden; background:#6bb3f6; padding-left:20px;">网站防火墙 </div>
-    <div style="border:1px dashed #cdcece; border-top:none; font-size:14px; background:#fff; color:#555; line-height:24px; height:220px; padding:20px 20px 0 20px; overflow-y:auto;background:#f3f7f9;">
-      <p style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"><span style=" font-weight:600; color:#fc4f03;">您的请求带有不合法参数，已被网站管理员设置拦截！</span></p>
-<p style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;">可能原因：您提交的内容包含危险的攻击请求</p>
-<p style=" margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:1; text-indent:0px;">如何解决：</p>
-<ul style="margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; -qt-list-indent: 1;"><li style=" margin-top:12px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;">1）检查提交内容；</li>
-<li style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;">2）如网站托管，请联系空间提供商；</li>
-<li style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;">3）普通网站访客，请联系网站管理员；</li></ul>
-    </div>
-  </div>
-</div>
-</body></html>
-]]
+--hackrate超过10次/1800秒,限制访问86400秒。
+hackipdeny="on"
+hackrate="10/1800/7200"
+--cc攻击防范 新增屏蔽周期  60秒内,请求同一url累计超过40次,封锁ip 3600 秒
+CCDeny="on"
+CCrate="40/60/7200"
+---cc策略次数是否纳入hackip,纳入则cc策略会封锁ip,cc加强版
+cclinkhack="on"
+--1.加强cc防护,原生效果太差,用一条url触发成功拦截，并计入恶意请求次数2.更换正则模块目前用find，压测效果匹配速度是原来的3-4倍,3.新增cc拦截日志.4.新增恶意请求ip的拦截。新增args post  url  user-agent的策略
